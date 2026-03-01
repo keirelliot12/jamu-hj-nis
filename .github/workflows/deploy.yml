@@ -23,61 +23,62 @@ jobs:
             # Clone or pull
             if [ -d "$DEPLOY_DIR" ]; then
               cd $DEPLOY_DIR
-              git fetch origin main
-              git reset --hard origin/main
+              git fetch origin master
+              git reset --hard origin/master
             else
-              git clone $REPO_URL $DEPLOY_DIR
+              sudo mkdir -p /var/www/santrigresik
+              sudo git clone $REPO_URL $DEPLOY_DIR
               cd $DEPLOY_DIR
             fi
 
             # Install dependencies
-            composer install --no-dev --optimize-autoloader --no-interaction
+            cd $DEPLOY_DIR
+            sudo composer install --no-dev --optimize-autoloader --no-interaction
 
             # Setup env if first deploy
             if [ ! -f .env ]; then
-              cp .env.example .env
-              php artisan key:generate
+              sudo cp .env.example .env
+              sudo php artisan key:generate
 
               # Configure .env for subdirectory
-              sed -i 's|APP_URL=.*|APP_URL=https://santrigresik.me/jamu-hj-nis|' .env
-              sed -i 's|APP_ENV=.*|APP_ENV=production|' .env
-              sed -i 's|APP_DEBUG=.*|APP_DEBUG=false|' .env
+              sudo sed -i 's|APP_URL=.*|APP_URL=https://santrigresik.me/jamu-hj-nis|' .env
+              sudo sed -i 's|APP_ENV=.*|APP_ENV=production|' .env
+              sudo sed -i 's|APP_DEBUG=.*|APP_DEBUG=false|' .env
 
               # Add subdirectory config
-              echo "" >> .env
-              echo "ASSET_URL=/jamu-hj-nis" >> .env
-              echo "SESSION_PATH=/jamu-hj-nis" >> .env
-              echo "SESSION_COOKIE=jamu_session" >> .env
-              echo "SESSION_SECURE_COOKIE=true" >> .env
+              echo "" | sudo tee -a .env
+              echo "ASSET_URL=/jamu-hj-nis" | sudo tee -a .env
+              echo "SESSION_PATH=/jamu-hj-nis" | sudo tee -a .env
+              echo "SESSION_COOKIE=jamu_session" | sudo tee -a .env
+              echo "SESSION_SECURE_COOKIE=true" | sudo tee -a .env
             fi
 
             # Database setup
-            touch database/database.sqlite
-            php artisan migrate --force --no-interaction
+            sudo touch database/database.sqlite
+            sudo php artisan migrate --force --no-interaction
 
             # Check if seeder needs to run (first deploy)
-            PRODUCT_COUNT=$(php artisan tinker --execute="echo \App\Models\Product::count();" 2>/dev/null || echo "0")
-            if [ "$PRODUCT_COUNT" = "0" ]; then
-              php artisan db:seed --force --no-interaction
+            PRODUCT_COUNT=$(sudo php artisan tinker --execute="echo \App\Models\Product::count();" 2>/dev/null || echo "0")
+            if [ "$PRODUCT_COUNT" = "0" ] || [ -z "$PRODUCT_COUNT" ]; then
+              sudo php artisan db:seed --force --no-interaction
             fi
 
             # Storage link
-            php artisan storage:link 2>/dev/null || true
+            sudo php artisan storage:link 2>/dev/null || true
 
             # Cache
-            php artisan config:cache
-            php artisan route:cache
-            php artisan view:cache
+            sudo php artisan config:cache
+            sudo php artisan route:cache
+            sudo php artisan view:cache
 
             # Permissions
-            chown -R www-data:www-data storage bootstrap/cache database
-            chmod -R 775 storage bootstrap/cache database
+            sudo chown -R www-data:www-data $DEPLOY_DIR/storage $DEPLOY_DIR/bootstrap/cache $DEPLOY_DIR/database
+            sudo chmod -R 775 $DEPLOY_DIR/storage $DEPLOY_DIR/bootstrap/cache $DEPLOY_DIR/database
 
             # Setup Nginx if not exists
             NGINX_CONF="/etc/nginx/sites-available/santrigresik.me"
-            if ! grep -q "jamu-hj-nis" "$NGINX_CONF" 2>/dev/null; then
-              # Insert before the last closing brace
-              sed -i '/^}/i \
+            if ! sudo grep -q "jamu-hj-nis" "$NGINX_CONF" 2>/dev/null; then
+              sudo sed -i '/^}/i \
                 location /jamu-hj-nis {\
                     alias /var/www/santrigresik/jamu-hj-nis/public;\
                     try_files $uri $uri/ @jamu;\
@@ -90,7 +91,7 @@ jobs:
                 location @jamu {\
                     rewrite /jamu-hj-nis/(.*)$ /jamu-hj-nis/index.php?/$1 last;\
                 }' "$NGINX_CONF"
-              nginx -t && systemctl reload nginx
+              sudo nginx -t && sudo systemctl reload nginx
             fi
 
-            echo "✅ Deploy complete: https://santrigresik.me/jamu-hj-nis"
+            echo "Deploy complete: https://santrigresik.me/jamu-hj-nis"
