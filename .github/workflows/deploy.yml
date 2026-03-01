@@ -21,7 +21,7 @@ jobs:
             REPO_URL="https://github.com/keirelliot12/jamu-hj-nis.git"
 
             # Fix git ownership
-            sudo git config --global --add safe.directory $DEPLOY_DIR
+            git config --global --add safe.directory $DEPLOY_DIR
 
             # Clone or pull
             if [ -d "$DEPLOY_DIR" ]; then
@@ -30,7 +30,7 @@ jobs:
               git reset --hard origin/master
             else
               sudo mkdir -p /var/www/santrigresik
-              sudo git clone $REPO_URL $DEPLOY_DIR
+              git clone $REPO_URL $DEPLOY_DIR
               cd $DEPLOY_DIR
             fi
 
