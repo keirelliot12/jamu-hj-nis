@@ -20,6 +20,9 @@ jobs:
             DEPLOY_DIR="/var/www/santrigresik/jamu-hj-nis"
             REPO_URL="https://github.com/keirelliot12/jamu-hj-nis.git"
 
+            # Fix git ownership
+            sudo git config --global --add safe.directory $DEPLOY_DIR
+
             # Clone or pull
             if [ -d "$DEPLOY_DIR" ]; then
               cd $DEPLOY_DIR
