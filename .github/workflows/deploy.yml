@@ -1,0 +1,96 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [master, main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+
+            DEPLOY_DIR="/var/www/santrigresik/jamu-hj-nis"
+            REPO_URL="https://github.com/keirelliot12/jamu-hj-nis.git"
+
+            # Clone or pull
+            if [ -d "$DEPLOY_DIR" ]; then
+              cd $DEPLOY_DIR
+              git fetch origin main
+              git reset --hard origin/main
+            else
+              git clone $REPO_URL $DEPLOY_DIR
+              cd $DEPLOY_DIR
+            fi
+
+            # Install dependencies
+            composer install --no-dev --optimize-autoloader --no-interaction
+
+            # Setup env if first deploy
+            if [ ! -f .env ]; then
+              cp .env.example .env
+              php artisan key:generate
+
+              # Configure .env for subdirectory
+              sed -i 's|APP_URL=.*|APP_URL=https://santrigresik.me/jamu-hj-nis|' .env
+              sed -i 's|APP_ENV=.*|APP_ENV=production|' .env
+              sed -i 's|APP_DEBUG=.*|APP_DEBUG=false|' .env
+
+              # Add subdirectory config
+              echo "" >> .env
+              echo "ASSET_URL=/jamu-hj-nis" >> .env
+              echo "SESSION_PATH=/jamu-hj-nis" >> .env
+              echo "SESSION_COOKIE=jamu_session" >> .env
+              echo "SESSION_SECURE_COOKIE=true" >> .env
+            fi
+
+            # Database setup
+            touch database/database.sqlite
+            php artisan migrate --force --no-interaction
+
+            # Check if seeder needs to run (first deploy)
+            PRODUCT_COUNT=$(php artisan tinker --execute="echo \App\Models\Product::count();" 2>/dev/null || echo "0")
+            if [ "$PRODUCT_COUNT" = "0" ]; then
+              php artisan db:seed --force --no-interaction
+            fi
+
+            # Storage link
+            php artisan storage:link 2>/dev/null || true
+
+            # Cache
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+
+            # Permissions
+            chown -R www-data:www-data storage bootstrap/cache database
+            chmod -R 775 storage bootstrap/cache database
+
+            # Setup Nginx if not exists
+            NGINX_CONF="/etc/nginx/sites-available/santrigresik.me"
+            if ! grep -q "jamu-hj-nis" "$NGINX_CONF" 2>/dev/null; then
+              # Insert before the last closing brace
+              sed -i '/^}/i \
+                location /jamu-hj-nis {\
+                    alias /var/www/santrigresik/jamu-hj-nis/public;\
+                    try_files $uri $uri/ @jamu;\
+                    location ~ \\.php$ {\
+                        fastcgi_pass unix:/run/php/php8.3-fpm.sock;\
+                        fastcgi_param SCRIPT_FILENAME $request_filename;\
+                        include fastcgi_params;\
+                    }\
+                }\
+                location @jamu {\
+                    rewrite /jamu-hj-nis/(.*)$ /jamu-hj-nis/index.php?/$1 last;\
+                }' "$NGINX_CONF"
+              nginx -t && systemctl reload nginx
+            fi
+
+            echo "✅ Deploy complete: https://santrigresik.me/jamu-hj-nis"
